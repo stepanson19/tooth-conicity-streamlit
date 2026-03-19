@@ -8,12 +8,13 @@ The dependency pins in `requirements.txt` assume Python 3.9.
 
 1. Create and activate a virtualenv.
 ```bash
-python -m venv .venv
+python3.9 -m venv .venv
 source .venv/bin/activate
 ```
 2. Install dependencies.
+This install requires `git` and internet access because `segment-anything` is pulled from GitHub.
 ```bash
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 3. Place the SAM checkpoint under `checkpoints/` or point the app to an existing file.
 4. Start the browser app.
@@ -28,4 +29,9 @@ The app accepts one uploaded image, runs the analysis pipeline in the browser se
 Run the test suite from the project root:
 ```bash
 PYTHONPATH=src pytest -v
+```
+Run a minimal headless startup check:
+```bash
+source .venv/bin/activate
+streamlit run app.py --server.headless true --server.port 8501
 ```
