@@ -26,6 +26,7 @@ from tooth_service.visualization import (
 )
 
 DEFAULT_CHECKPOINT = ROOT / 'checkpoints' / 'sam_vit_h_4b8939.pth'
+DEFAULT_CHECKPOINT_INPUT = Path('checkpoints') / DEFAULT_CHECKPOINT.name
 
 
 def _get_streamlit():
@@ -43,10 +44,27 @@ def _resolve_optional_device(raw_device: str) -> Optional[str]:
     return value or None
 
 
+def _default_checkpoint_input_value() -> str:
+    return str(DEFAULT_CHECKPOINT_INPUT)
+
+
+def _resolve_checkpoint_input(raw_path: str) -> str:
+    value = raw_path.strip()
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return str(path.resolve())
+
+
 def _analysis_settings(st):
     with st.sidebar:
         st.title('Settings')
-        checkpoint_path = st.text_input('SAM checkpoint path', value=str(DEFAULT_CHECKPOINT))
+        if 'checkpoint_path_input' not in st.session_state:
+            st.session_state.checkpoint_path_input = _default_checkpoint_input_value()
+        elif st.session_state.checkpoint_path_input == str(DEFAULT_CHECKPOINT):
+            st.session_state.checkpoint_path_input = _default_checkpoint_input_value()
+
+        checkpoint_path = st.text_input('SAM checkpoint path', key='checkpoint_path_input')
         device = st.text_input('Device', value='')
 
         with st.expander('Advanced settings', expanded=False):
@@ -65,7 +83,7 @@ def _analysis_settings(st):
     }
 
     return {
-        'checkpoint_path': checkpoint_path,
+        'checkpoint_path': _resolve_checkpoint_input(checkpoint_path),
         'device': _resolve_optional_device(device),
         'top_q': float(top_q),
         'bot_q': float(bot_q),

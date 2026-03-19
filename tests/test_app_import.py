@@ -107,6 +107,29 @@ def test_clear_analysis_result_resets_session_state():
     assert st.session_state.analysis_image is None
 
 
+def test_default_checkpoint_input_hides_home_directory():
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    app = importlib.import_module("app")
+
+    value = app._default_checkpoint_input_value()
+
+    assert value == "checkpoints/sam_vit_h_4b8939.pth"
+    assert "/Users/" not in value
+
+
+def test_resolve_checkpoint_input_expands_project_relative_path():
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    app = importlib.import_module("app")
+
+    resolved = app._resolve_checkpoint_input("checkpoints/sam_vit_h_4b8939.pth")
+
+    assert resolved == str(app.DEFAULT_CHECKPOINT)
+
+
 def test_render_result_uses_streamlit_image_compatible_kwargs():
     root = Path(__file__).resolve().parents[1]
     if str(root) not in sys.path:
