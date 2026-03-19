@@ -14,6 +14,6 @@ def resolve_checkpoint_path(path_like: PathLike) -> Path:
 
 def ensure_checkpoint_exists(path_like: PathLike) -> Path:
     path = resolve_checkpoint_path(path_like)
-    if not path.exists():
+    if not path.exists() or not path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
     return path

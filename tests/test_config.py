@@ -19,3 +19,11 @@ def test_ensure_checkpoint_exists_raises_for_missing_file(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
         ensure_checkpoint_exists(missing)
+
+
+def test_ensure_checkpoint_exists_rejects_directory(tmp_path):
+    directory = tmp_path / "checkpoints"
+    directory.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
+        ensure_checkpoint_exists(directory)
