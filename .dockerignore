@@ -1,0 +1,14 @@
+.git
+.gitignore
+.pytest_cache
+.venv
+.worktree
+.worktrees
+__pycache__
+*.pyc
+.DS_Store
+checkpoints
+docs
+outputs
+tests
+tooth_sam_taper_classifier.ipynb

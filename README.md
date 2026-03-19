@@ -1,3 +1,10 @@
+---
+title: Tooth Conicity App
+sdk: docker
+app_port: 8501
+short_description: Tooth conicity measurement from uploaded dental images
+---
+
 # Tooth Streamlit Service
 
 Local Streamlit wrapper for tooth conicity measurement.
@@ -23,6 +30,14 @@ streamlit run app.py
 ```
 
 The app accepts one uploaded image, runs the analysis pipeline in the browser session, and lets you download the JSON output.
+
+## Hugging Face Spaces
+
+The repository is prepared for a Docker-based Hugging Face Space.
+
+- The Space defaults to `SAM vit_b` via environment variables to fit free CPU hardware more realistically.
+- The checkpoint is downloaded automatically on first analysis run inside the container.
+- The first request in the Space will take longer because the checkpoint must be fetched before inference starts.
 
 ## Verify
 

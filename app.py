@@ -12,7 +12,8 @@ if SRC_DIR.exists():
         sys.path.insert(0, src_path)
 
 from tooth_service.config import ensure_checkpoint_exists
-from tooth_service.constants import DEFAULT_BOT_Q, DEFAULT_SAM_MODEL_TYPE, DEFAULT_TOP_Q
+from tooth_service.config import default_checkpoint_path, resolve_model_type
+from tooth_service.constants import DEFAULT_BOT_Q, DEFAULT_TOP_Q
 from tooth_service.image_io import decode_uploaded_image
 from tooth_service.pipeline import analyze_image
 from tooth_service.sam_runner import load_sam_model
@@ -25,7 +26,8 @@ from tooth_service.visualization import (
     warning_lines,
 )
 
-DEFAULT_CHECKPOINT = ROOT / 'checkpoints' / 'sam_vit_h_4b8939.pth'
+APP_DEFAULT_SAM_MODEL_TYPE = resolve_model_type()
+DEFAULT_CHECKPOINT = default_checkpoint_path(ROOT, model_type=APP_DEFAULT_SAM_MODEL_TYPE)
 DEFAULT_CHECKPOINT_INPUT = Path('checkpoints') / DEFAULT_CHECKPOINT.name
 
 
@@ -84,6 +86,7 @@ def _analysis_settings(st):
 
     return {
         'checkpoint_path': _resolve_checkpoint_input(checkpoint_path),
+        'model_type': APP_DEFAULT_SAM_MODEL_TYPE,
         'device': _resolve_optional_device(device),
         'top_q': float(top_q),
         'bot_q': float(bot_q),
@@ -95,9 +98,9 @@ def _analysis_settings(st):
 
 def _cached_model_loader(st):
     @st.cache_resource(show_spinner=False)
-    def _load(checkpoint_path: str, device: Optional[str]):
+    def _load(model_type: str, checkpoint_path: str, device: Optional[str]):
         return load_sam_model(
-            model_type=DEFAULT_SAM_MODEL_TYPE,
+            model_type=model_type,
             checkpoint_path=checkpoint_path,
             device=device,
         )
@@ -108,12 +111,12 @@ def _cached_model_loader(st):
 def _run_analysis(image_rgb, settings, st):
     checkpoint = ensure_checkpoint_exists(settings['checkpoint_path'])
     cached_load = _cached_model_loader(st)
-    sam_model = cached_load(str(checkpoint), settings['device'])
+    sam_model = cached_load(settings['model_type'], str(checkpoint), settings['device'])
 
     return analyze_image(
         image_rgb,
         checkpoint_path=str(checkpoint),
-        model_type=DEFAULT_SAM_MODEL_TYPE,
+        model_type=settings['model_type'],
         sam_model=sam_model,
         device=settings['device'],
         mask_generator_kwargs=settings['mask_generator_kwargs'],
