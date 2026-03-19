@@ -50,6 +50,18 @@ def serialize_pipeline_output(output):
     return _json_safe(output)
 
 
+def _pipeline_output(*, status, error_stage, warnings, results, overlay_image, instances_count):
+    return {
+        "status": status,
+        "error": status == "error",
+        "error_stage": error_stage,
+        "results": results,
+        "overlay_image": overlay_image,
+        "instances_count": instances_count,
+        "warnings": warnings,
+    }
+
+
 def analyze_image(
     image_rgb,
     *,
@@ -77,36 +89,43 @@ def analyze_image(
         )
     except Exception as exc:
         warnings.append(f"mask generation failed: {exc}")
-        return {
-            "results": [],
-            "overlay_image": image_rgb.copy(),
-            "instances_count": 0,
-            "warnings": warnings,
-        }
+        return _pipeline_output(
+            status="error",
+            error_stage="mask_generation",
+            warnings=warnings,
+            results=[],
+            overlay_image=image_rgb.copy(),
+            instances_count=0,
+        )
 
     try:
         tooth_items, instances = build_tooth_items(image_rgb, raw_masks, pad=pad)
     except Exception as exc:
         warnings.append(f"tooth extraction failed: {exc}")
-        return {
-            "results": [],
-            "overlay_image": image_rgb.copy(),
-            "instances_count": 0,
-            "warnings": warnings,
-        }
+        return _pipeline_output(
+            status="error",
+            error_stage="tooth_extraction",
+            warnings=warnings,
+            results=[],
+            overlay_image=image_rgb.copy(),
+            instances_count=0,
+        )
 
     if not tooth_items:
         warnings.append("No tooth candidates found after filtering")
-        return {
-            "results": [],
-            "overlay_image": image_rgb.copy(),
-            "instances_count": len(instances),
-            "warnings": warnings,
-        }
+        return _pipeline_output(
+            status="empty",
+            error_stage=None,
+            warnings=warnings,
+            results=[],
+            overlay_image=image_rgb.copy(),
+            instances_count=len(instances),
+        )
 
     results = []
     for tooth in tooth_items:
         taper_result = None
+        taper_exception = None
         try:
             taper_result = trapezoid_taper_no_rot(
                 np.asarray(tooth["mask_crop"]).astype(np.uint8),
@@ -115,7 +134,7 @@ def analyze_image(
                 smooth=smooth,
             )
         except Exception as exc:
-            warnings.append(f"taper failed for tooth {tooth['id']}: {exc}")
+            taper_exception = exc
 
         result = {
             "id": int(tooth["id"]),
@@ -127,7 +146,9 @@ def analyze_image(
             "w_bot": None,
             "h_eff": None,
         }
-        if taper_result is None:
+        if taper_exception is not None:
+            warnings.append(f"taper failed for tooth {tooth['id']}: {taper_exception}")
+        elif taper_result is None:
             warnings.append(f"taper could not be computed for tooth {tooth['id']}")
         else:
             result.update(
@@ -142,9 +163,11 @@ def analyze_image(
             )
         results.append(result)
 
-    return {
-        "results": results,
-        "overlay_image": _overlay_segmentation_masks(image_rgb, tooth_items),
-        "instances_count": len(instances),
-        "warnings": warnings,
-    }
+    return _pipeline_output(
+        status="ok",
+        error_stage=None,
+        warnings=warnings,
+        results=results,
+        overlay_image=_overlay_segmentation_masks(image_rgb, tooth_items),
+        instances_count=len(instances),
+    )
