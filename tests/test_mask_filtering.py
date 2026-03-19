@@ -79,6 +79,32 @@ def test_build_tooth_items_rejects_non_rgb_images():
         build_tooth_items(image, raw_masks)
 
 
+def test_build_tooth_items_rejects_non_uint8_images():
+    image = np.full((20, 20, 3), 255.0, dtype=np.float32)
+    raw_masks = [{"segmentation": make_mask((20, 20), (2, 2, 12, 12)), "score": 0.9}]
+
+    with pytest.raises(ValueError, match="uint8"):
+        build_tooth_items(image, raw_masks)
+
+
+def test_select_instances_prefers_higher_scored_duplicate():
+    base = np.zeros((20, 20), dtype=np.uint8)
+    duplicate = base.copy()
+    duplicate[2:8, 2:8] = 1
+    different = base.copy()
+    different[10:15, 10:15] = 1
+
+    high = {"segmentation": duplicate, "score": 0.95, "uid": "high"}
+    low = {"segmentation": duplicate.copy(), "score": 0.2, "uid": "low"}
+    other = {"segmentation": different, "score": 0.5, "uid": "other"}
+
+    kept = select_instances([low, high, other], iou_thresh=0.5, contain_thresh=0.85, max_instances=10)
+
+    assert kept[0] is high
+    assert kept[0]["uid"] == "high"
+    assert all(item["uid"] != "low" for item in kept)
+
+
 def make_mask(shape, bbox):
     seg = np.zeros(shape, dtype=np.uint8)
     x0, y0, x1, y1 = bbox

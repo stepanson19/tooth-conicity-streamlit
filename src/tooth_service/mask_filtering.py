@@ -142,6 +142,8 @@ def build_tooth_items(
 ):
     if not isinstance(image_rgb, np.ndarray) or image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
         raise ValueError("image_rgb must be an RGB image array with shape (H, W, 3)")
+    if image_rgb.dtype != np.uint8:
+        raise ValueError("image_rgb must have dtype uint8")
 
     if not raw_masks:
         return [], []
