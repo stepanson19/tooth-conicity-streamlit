@@ -9,11 +9,17 @@ from .constants import TAPER_DICT
 
 def find_closest_angle(ratio):
     """Return the closest supported taper angle for a width ratio."""
-    if ratio <= TAPER_DICT[5]:
-        return 5
-    if ratio >= TAPER_DICT[28]:
-        return 28
-    return min(TAPER_DICT.keys(), key=lambda angle: abs(TAPER_DICT[angle] - ratio))
+    if not TAPER_DICT:
+        raise ValueError("TAPER_DICT must not be empty")
+
+    angles = sorted(TAPER_DICT)
+    min_angle = angles[0]
+    max_angle = angles[-1]
+    if ratio <= TAPER_DICT[min_angle]:
+        return min_angle
+    if ratio >= TAPER_DICT[max_angle]:
+        return max_angle
+    return min(angles, key=lambda angle: abs(TAPER_DICT[angle] - ratio))
 
 
 def widths_by_row(mask01: np.ndarray):
@@ -96,27 +102,4 @@ def trapezoid_taper_no_rot(mask01: np.ndarray, top_q=0.25, bot_q=0.80, smooth=7)
         "left_wall_deg": left_wall_deg,
         "right_wall_deg": right_wall_deg,
         "conicity_lr_deg": conicity_lr_deg,
-        "lefts": lefts,
-        "rights": rights,
-        "mask": mask01,
     }
-
-
-def visualize_trapezoid_no_rot(crop_rgb, mask01, result):
-    """Visualize the mask and taper reference rows."""
-    import cv2
-
-    y_top = result["y_top"]
-    y_bot = result["y_bot"]
-    lefts = result["lefts"]
-    rights = result["rights"]
-
-    vis = crop_rgb.copy()
-    cnts, _ = cv2.findContours((mask01 * 255).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(vis, cnts, -1, (0, 255, 0), 2)
-
-    for y, col in [(y_top, (255, 0, 0)), (y_bot, (0, 0, 255))]:
-        if lefts[y] >= 0 and rights[y] >= 0:
-            cv2.line(vis, (int(lefts[y]), int(y)), (int(rights[y]), int(y)), col, 2)
-
-    return vis
