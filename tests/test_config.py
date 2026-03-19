@@ -27,3 +27,11 @@ def test_ensure_checkpoint_exists_rejects_directory(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
         ensure_checkpoint_exists(directory)
+
+
+def test_ensure_checkpoint_exists_rejects_incomplete_known_checkpoint(tmp_path):
+    partial = tmp_path / "sam_vit_h_4b8939.pth"
+    partial.write_bytes(b"x" * 1024)
+
+    with pytest.raises(ValueError, match="incomplete"):
+        ensure_checkpoint_exists(partial)
