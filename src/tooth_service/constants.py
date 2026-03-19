@@ -1,6 +1,9 @@
 DEFAULT_TOP_Q = 0.15
 DEFAULT_BOT_Q = 0.65
 
+DEFAULT_SAM_MODEL_TYPE = "vit_h"
+SAM_MODEL_TYPES = ("vit_h", "vit_l", "vit_b")
+
 TAPER_DICT = {
     5: 0.0875,
     6: 0.1051,
