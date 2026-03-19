@@ -11,14 +11,14 @@ def results_to_rows(results: Iterable[Mapping[str, object]]):
     for item in results:
         rows.append(
             {
-                "id": item.get("id"),
-                "bbox_xyxy": item.get("bbox_xyxy"),
-                "conicity_width_deg": item.get("conicity_width_deg"),
-                "conicity_lr_deg": item.get("conicity_lr_deg"),
-                "angle_from_dict": item.get("angle_from_dict"),
-                "w_top": item.get("w_top"),
-                "w_bot": item.get("w_bot"),
-                "h_eff": item.get("h_eff"),
+                'id': item.get('id'),
+                'bbox_xyxy': item.get('bbox_xyxy'),
+                'conicity_width_deg': item.get('conicity_width_deg'),
+                'conicity_lr_deg': item.get('conicity_lr_deg'),
+                'angle_from_dict': item.get('angle_from_dict'),
+                'w_top': item.get('w_top'),
+                'w_bot': item.get('w_bot'),
+                'h_eff': item.get('h_eff'),
             }
         )
     return rows
@@ -29,26 +29,29 @@ def warning_lines(warnings: Iterable[str]):
 
 
 def status_message(output):
-    status = output.get("status", "ok")
-    error_stage = output.get("error_stage")
-    if status == "error":
+    status = output.get('status', 'ok')
+    error_stage = output.get('error_stage')
+    if status == 'error':
         return f"Status: error at {error_stage or 'analysis'}"
-    if status == "empty":
-        return "Status: no candidates after filtering"
-    return "Status: analysis complete"
+    if status == 'empty':
+        return 'Status: no candidates after filtering'
+    return 'Status: analysis complete'
 
 
 def download_filename(output):
-    status = output.get("status", "ok")
-    return f"tooth_results_{status}.json"
+    status = output.get('status', 'ok')
+    return f'tooth_results_{status}.json'
 
 
 def export_payload(output):
-    payload = serialize_pipeline_output(output)
-    payload.pop("overlay_image", None)
-    return payload
+    payload = dict(output)
+    payload.pop('overlay_image', None)
+    return serialize_pipeline_output(payload)
+
+
+def download_payload_from_serialized(serialized_output):
+    return json.dumps(serialized_output, ensure_ascii=False, indent=2).encode('utf-8')
 
 
 def download_payload(output):
-    payload = export_payload(output)
-    return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    return download_payload_from_serialized(export_payload(output))
