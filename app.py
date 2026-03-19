@@ -53,7 +53,6 @@ def _analysis_settings(st):
             bot_q = st.number_input("bot_q", min_value=0.0, max_value=1.0, value=float(DEFAULT_BOT_Q), step=0.01)
             smooth = st.number_input("smooth", min_value=1, max_value=31, value=7, step=2)
             pad = st.number_input("pad", min_value=0, max_value=64, value=10, step=1)
-            max_side = st.number_input("max_side", min_value=256, max_value=4096, value=1536, step=64)
             points_per_side = st.number_input("points_per_side", min_value=4, max_value=64, value=16, step=1)
             points_per_batch = st.number_input("points_per_batch", min_value=1, max_value=32, value=4, step=1)
 
@@ -71,7 +70,6 @@ def _analysis_settings(st):
         "bot_q": float(bot_q),
         "smooth": int(smooth),
         "pad": int(pad),
-        "max_side": int(max_side),
         "mask_generator_kwargs": mask_generator_kwargs,
     }
 
@@ -165,7 +163,6 @@ def main():
     if "analysis_output" not in st.session_state:
         st.session_state.analysis_output = None
         st.session_state.analysis_image = None
-        st.session_state.analysis_error = None
 
     if run_clicked:
         if uploaded_file is None:

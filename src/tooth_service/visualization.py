@@ -43,6 +43,12 @@ def download_filename(output):
     return f"tooth_results_{status}.json"
 
 
-def download_payload(output):
+def export_payload(output):
     payload = serialize_pipeline_output(output)
+    payload.pop("overlay_image", None)
+    return payload
+
+
+def download_payload(output):
+    payload = export_payload(output)
     return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
