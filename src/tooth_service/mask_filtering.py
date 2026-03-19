@@ -74,7 +74,11 @@ def color_stats_hsv(hsv_img: np.ndarray, seg: np.ndarray):
 
 
 def select_instances(masks, iou_thresh=0.50, contain_thresh=0.85, max_instances=24):
-    ms = sorted(masks, key=lambda m: (m.get("score", 0.0), m.get("props", {}).get("area", 0)), reverse=True)
+    def sort_key(mask):
+        props = mask.get("props") or {}
+        return (mask.get("score", 0.0), props.get("area", 0))
+
+    ms = sorted(masks, key=sort_key, reverse=True)
     kept = []
     for m in ms:
         seg = m["segmentation"]
@@ -136,6 +140,9 @@ def build_tooth_items(
     max_instances=24,
     pad=10,
 ):
+    if not isinstance(image_rgb, np.ndarray) or image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
+        raise ValueError("image_rgb must be an RGB image array with shape (H, W, 3)")
+
     if not raw_masks:
         return [], []
 

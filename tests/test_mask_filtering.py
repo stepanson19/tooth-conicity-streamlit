@@ -1,6 +1,7 @@
 import numpy as np
+import pytest
 
-from tooth_service.mask_filtering import build_tooth_items, crop_from_mask, mask_props
+from tooth_service.mask_filtering import build_tooth_items, crop_from_mask, mask_props, select_instances
 
 
 def test_mask_props_returns_bbox_metrics():
@@ -45,6 +46,37 @@ def test_build_tooth_items_keeps_non_overlapping_instances():
     assert tooth_items[0]["segmentation"].shape == image.shape[:2]
     assert "segmentation" in instances[0]
     assert instances[0]["segmentation"].shape == image.shape[:2]
+    assert tooth_items[0]["segmentation"] is instances[0]["segmentation"]
+
+
+def test_select_instances_handles_sparse_metadata_and_overlap():
+    base = np.zeros((20, 20), dtype=np.uint8)
+    mask_a = base.copy()
+    mask_a[2:8, 2:8] = 1
+    mask_b = base.copy()
+    mask_b[2:8, 2:8] = 1
+    mask_c = base.copy()
+    mask_c[10:15, 10:15] = 1
+
+    masks = [
+        {"segmentation": mask_a, "score": 0.1, "props": None},
+        {"segmentation": mask_b, "score": 0.9},
+        {"segmentation": mask_c, "score": 0.5, "props": {"area": 25}},
+    ]
+
+    kept = select_instances(masks, iou_thresh=0.5, contain_thresh=0.85, max_instances=10)
+
+    assert len(kept) == 2
+    assert kept[0]["segmentation"].sum() == mask_b.sum()
+    assert kept[1]["segmentation"].sum() == mask_c.sum()
+
+
+def test_build_tooth_items_rejects_non_rgb_images():
+    image = np.zeros((20, 20), dtype=np.uint8)
+    raw_masks = [{"segmentation": make_mask((20, 20), (2, 2, 12, 12)), "score": 0.9}]
+
+    with pytest.raises(ValueError, match="RGB image"):
+        build_tooth_items(image, raw_masks)
 
 
 def make_mask(shape, bbox):
