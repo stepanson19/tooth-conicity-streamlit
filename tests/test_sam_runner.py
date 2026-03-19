@@ -116,6 +116,45 @@ def test_generate_masks_prefers_cpu_for_external_model_without_device(monkeypatc
     np.testing.assert_array_equal(masks[0]["segmentation"], np.ones((2, 2), dtype=np.uint8))
 
 
+def test_generate_masks_uses_cuda_for_internal_load_without_model_device(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "sam.pth"
+    checkpoint.write_bytes(b"checkpoint")
+    image = np.zeros((24, 40, 3), dtype=np.uint8)
+    model = InternalLoadModelWithoutDevice()
+    mask_generator = FakeMaskGenerator()
+    state = {"autocast_used": False}
+
+    @contextmanager
+    def fake_inference_mode():
+        yield
+
+    @contextmanager
+    def fake_autocast(device_type, dtype=None):
+        state["autocast_used"] = True
+        assert device_type == "cuda"
+        assert dtype == "float16"
+        yield
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        inference_mode=fake_inference_mode,
+        autocast=fake_autocast,
+        float16="float16",
+    )
+    api = SimpleNamespace(sam_model_registry={"vit_h": lambda checkpoint: model}, SamAutomaticMaskGenerator=lambda model, **kwargs: mask_generator)
+
+    monkeypatch.setattr(sam_runner, "_get_segment_anything_api", lambda: api)
+    monkeypatch.setattr(sam_runner, "torch", fake_torch, raising=False)
+
+    masks = sam_runner.generate_masks(image, checkpoint_path=checkpoint, max_side=100)
+
+    assert state["autocast_used"] is True
+    assert model.to_args == ("cuda",)
+    assert mask_generator.received_image.shape == image.shape
+    assert len(masks) == 1
+    np.testing.assert_array_equal(masks[0]["segmentation"], np.ones((2, 2), dtype=np.uint8))
+
+
 def test_generate_masks_uses_autocast_on_cuda(monkeypatch):
     image = np.zeros((24, 40, 3), dtype=np.uint8)
     model = FakeModel()
@@ -236,6 +275,15 @@ class InternalTypeErrorModel:
 class ExternalModelWithoutDevice:
     def __init__(self):
         pass
+
+
+class InternalLoadModelWithoutDevice:
+    def __init__(self):
+        self.to_args = None
+
+    def to(self, *args, **kwargs):
+        self.to_args = args
+        return self
 
 
 class FakeMaskGenerator:

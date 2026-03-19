@@ -121,11 +121,17 @@ def generate_masks(
     mask_generator_kwargs=None,
 ):
     validate_image_rgb(image_rgb)
+    runtime_device = None
 
     if sam_model is None:
         if checkpoint_path is None:
             raise ValueError("checkpoint_path is required when sam_model is not provided")
+        runtime_device = _resolve_device(device)
         sam_model = load_sam_model(model_type=model_type, checkpoint_path=checkpoint_path, device=device)
+    elif device is not None:
+        runtime_device = _resolve_device(device)
+    else:
+        runtime_device = _infer_model_device(sam_model) or "cpu"
 
     api = _get_segment_anything_api()
     generator_cls = getattr(api, "SamAutomaticMaskGenerator", None)
@@ -135,7 +141,6 @@ def generate_masks(
     generator_kwargs = dict(mask_generator_kwargs or {})
     mask_generator = generator_cls(model=sam_model, **generator_kwargs)
     image_small = resize_longest(image_rgb, max_side=max_side)
-    runtime_device = _resolve_device(device) if device is not None else _infer_model_device(sam_model) or "cpu"
 
     with _inference_context(runtime_device):
         return mask_generator.generate(image_small)
