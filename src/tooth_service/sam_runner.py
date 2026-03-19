@@ -56,6 +56,16 @@ def _resolve_device(device=None) -> str:
     return normalized
 
 
+def _infer_model_device(sam_model):
+    if sam_model is None:
+        return None
+    model_device = getattr(sam_model, "device", None)
+    if model_device is None:
+        return None
+    normalized = str(model_device)
+    return normalized or None
+
+
 @contextmanager
 def _inference_context(device: str):
     if torch is None:
@@ -87,13 +97,7 @@ def load_sam_model(model_type, checkpoint_path, device=None):
     resolved_device = _resolve_device(device)
     model = registry[model_type](checkpoint=str(checkpoint))
     if hasattr(model, "to"):
-        try:
-            model = model.to(device=resolved_device)
-        except TypeError as exc:
-            message = str(exc)
-            if "unexpected keyword argument" not in message or "device" not in message:
-                raise
-            model = model.to(resolved_device)
+        model = model.to(resolved_device)
     return model
 
 
@@ -131,7 +135,7 @@ def generate_masks(
     generator_kwargs = dict(mask_generator_kwargs or {})
     mask_generator = generator_cls(model=sam_model, **generator_kwargs)
     image_small = resize_longest(image_rgb, max_side=max_side)
-    runtime_device = _resolve_device(device if device is not None else getattr(sam_model, "device", None))
+    runtime_device = _resolve_device(device) if device is not None else _infer_model_device(sam_model) or "cpu"
 
     with _inference_context(runtime_device):
         return mask_generator.generate(image_small)

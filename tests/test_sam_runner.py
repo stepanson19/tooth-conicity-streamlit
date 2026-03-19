@@ -55,11 +55,11 @@ def test_load_sam_model_uses_cpu_when_cuda_is_unavailable(monkeypatch, tmp_path)
     assert model.device == "cpu"
 
 
-def test_load_sam_model_falls_back_to_positional_device_for_keyword_mismatch(monkeypatch, tmp_path):
+def test_load_sam_model_places_model_with_positional_device(monkeypatch, tmp_path):
     checkpoint = tmp_path / "sam.pth"
     checkpoint.write_bytes(b"checkpoint")
 
-    model = KeywordOnlyDeviceModel()
+    model = PlacementModel()
     api = SimpleNamespace(sam_model_registry={"vit_h": lambda checkpoint: model})
 
     monkeypatch.setattr(sam_runner, "_get_segment_anything_api", lambda: api)
@@ -68,7 +68,8 @@ def test_load_sam_model_falls_back_to_positional_device_for_keyword_mismatch(mon
     loaded = sam_runner.load_sam_model("vit_h", checkpoint)
 
     assert loaded is model
-    assert model.calls == [("keyword", "cpu"), ("positional", "cpu")]
+    assert model.to_args == ("cpu",)
+    assert model.to_kwargs == {}
 
 
 def test_load_sam_model_propagates_internal_type_error(monkeypatch, tmp_path):
@@ -83,6 +84,36 @@ def test_load_sam_model_propagates_internal_type_error(monkeypatch, tmp_path):
 
     with pytest.raises(TypeError, match="internal failure"):
         sam_runner.load_sam_model("vit_h", checkpoint)
+
+
+def test_generate_masks_prefers_cpu_for_external_model_without_device(monkeypatch):
+    image = np.zeros((24, 40, 3), dtype=np.uint8)
+    model = ExternalModelWithoutDevice()
+    mask_generator = FakeMaskGenerator()
+
+    @contextmanager
+    def fake_inference_mode():
+        yield
+
+    def fake_autocast(*args, **kwargs):
+        raise AssertionError("autocast should not be used for unknown external model devices")
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        inference_mode=fake_inference_mode,
+        autocast=fake_autocast,
+        float16="float16",
+    )
+    api = SimpleNamespace(sam_model_registry={"vit_h": lambda checkpoint: model}, SamAutomaticMaskGenerator=lambda model, **kwargs: mask_generator)
+
+    monkeypatch.setattr(sam_runner, "_get_segment_anything_api", lambda: api)
+    monkeypatch.setattr(sam_runner, "torch", fake_torch, raising=False)
+
+    masks = sam_runner.generate_masks(image, sam_model=model, max_side=100)
+
+    assert mask_generator.received_image.shape == image.shape
+    assert len(masks) == 1
+    np.testing.assert_array_equal(masks[0]["segmentation"], np.ones((2, 2), dtype=np.uint8))
 
 
 def test_generate_masks_uses_autocast_on_cuda(monkeypatch):
@@ -181,17 +212,16 @@ class FakeModel:
         return self
 
 
-class KeywordOnlyDeviceModel:
+class PlacementModel:
     def __init__(self):
-        self.calls = []
+        self.to_args = None
+        self.to_kwargs = None
         self.device = None
 
     def to(self, *args, **kwargs):
-        if kwargs:
-            self.calls.append(("keyword", kwargs["device"]))
-            raise TypeError("to() got an unexpected keyword argument 'device'")
-        self.calls.append(("positional", args[0]))
-        self.device = args[0]
+        self.to_args = args
+        self.to_kwargs = kwargs
+        self.device = args[0] if args else kwargs.get("device")
         return self
 
 
@@ -201,6 +231,11 @@ class InternalTypeErrorModel:
 
     def to(self, *args, **kwargs):
         raise TypeError("internal failure")
+
+
+class ExternalModelWithoutDevice:
+    def __init__(self):
+        pass
 
 
 class FakeMaskGenerator:
