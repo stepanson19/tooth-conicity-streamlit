@@ -89,9 +89,22 @@ def load_sam_model(model_type, checkpoint_path, device=None):
     if hasattr(model, "to"):
         try:
             model = model.to(device=resolved_device)
-        except TypeError:
+        except TypeError as exc:
+            message = str(exc)
+            if "unexpected keyword argument" not in message or "device" not in message:
+                raise
             model = model.to(resolved_device)
     return model
+
+
+def validate_image_rgb(image_rgb):
+    if not isinstance(image_rgb, np.ndarray):
+        raise ValueError("image_rgb must be an RGB uint8 ndarray with shape (H, W, 3)")
+    if image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
+        raise ValueError("image_rgb must be an RGB uint8 ndarray with shape (H, W, 3)")
+    if image_rgb.dtype != np.uint8:
+        raise ValueError("image_rgb must be an RGB uint8 ndarray with shape (H, W, 3)")
+    return image_rgb
 
 
 def generate_masks(
@@ -103,6 +116,8 @@ def generate_masks(
     max_side=1536,
     mask_generator_kwargs=None,
 ):
+    validate_image_rgb(image_rgb)
+
     if sam_model is None:
         if checkpoint_path is None:
             raise ValueError("checkpoint_path is required when sam_model is not provided")
