@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from tooth_service import taper
 from tooth_service.taper import find_closest_angle, trapezoid_taper_no_rot
@@ -9,14 +10,18 @@ def test_find_closest_angle_clamps_to_supported_range():
     assert find_closest_angle(0.90) == 28
 
 
-def test_find_closest_angle_uses_actual_dictionary_bounds():
-    original = taper.TAPER_DICT
-    taper.TAPER_DICT = {3: 0.10, 9: 0.50}
-    try:
-        assert find_closest_angle(0.01) == 3
-        assert find_closest_angle(0.90) == 9
-    finally:
-        taper.TAPER_DICT = original
+def test_find_closest_angle_uses_actual_ratio_bounds(monkeypatch):
+    monkeypatch.setattr(taper, "TAPER_DICT", {5: 0.50, 20: 0.10, 30: 0.90})
+
+    assert find_closest_angle(0.01) == 20
+    assert find_closest_angle(0.95) == 30
+
+
+def test_find_closest_angle_rejects_empty_dictionary(monkeypatch):
+    monkeypatch.setattr(taper, "TAPER_DICT", {})
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        find_closest_angle(0.5)
 
 
 def test_trapezoid_taper_returns_normalized_result_schema():

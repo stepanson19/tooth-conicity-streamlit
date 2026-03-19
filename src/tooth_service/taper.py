@@ -12,14 +12,14 @@ def find_closest_angle(ratio):
     if not TAPER_DICT:
         raise ValueError("TAPER_DICT must not be empty")
 
-    angles = sorted(TAPER_DICT)
-    min_angle = angles[0]
-    max_angle = angles[-1]
-    if ratio <= TAPER_DICT[min_angle]:
+    items = list(TAPER_DICT.items())
+    min_angle, min_ratio = min(items, key=lambda item: item[1])
+    max_angle, max_ratio = max(items, key=lambda item: item[1])
+    if ratio <= min_ratio:
         return min_angle
-    if ratio >= TAPER_DICT[max_angle]:
+    if ratio >= max_ratio:
         return max_angle
-    return min(angles, key=lambda angle: abs(TAPER_DICT[angle] - ratio))
+    return min(TAPER_DICT.keys(), key=lambda angle: abs(TAPER_DICT[angle] - ratio))
 
 
 def widths_by_row(mask01: np.ndarray):
