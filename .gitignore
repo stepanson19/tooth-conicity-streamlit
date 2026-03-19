@@ -1,1 +1,9 @@
 .worktrees/
+
+# Ignore local Python and generated artifacts
+.venv/
+__pycache__/
+.pytest_cache/
+checkpoints/
+outputs/
+*.pyc
