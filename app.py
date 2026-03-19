@@ -131,9 +131,9 @@ def _render_result(st, image_rgb, output):
 
     columns = st.columns(2)
     with columns[0]:
-        st.image(image_rgb, caption='Original image', use_container_width=True)
+        st.image(image_rgb, caption='Original image', use_column_width=True)
     with columns[1]:
-        st.image(output['overlay_image'], caption='Overlay', use_container_width=True)
+        st.image(output['overlay_image'], caption='Overlay', use_column_width=True)
 
     rows = results_to_rows(serialized.get('results', []))
     st.subheader('Per-tooth measurements')
