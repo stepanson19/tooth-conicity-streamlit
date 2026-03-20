@@ -148,8 +148,18 @@ def build_tooth_items(
     if not raw_masks:
         return [], []
 
-    work_h, work_w = image_rgb.shape[:2]
+    first_seg = np.asarray(raw_masks[0]["segmentation"])
+    if first_seg.ndim != 2:
+        raise ValueError("raw mask segmentation must be a 2D array")
+
+    work_h, work_w = first_seg.shape
+    work_img = image_rgb
+    if image_rgb.shape[:2] != (work_h, work_w):
+        work_img = cv2.resize(image_rgb, (work_w, work_h), interpolation=cv2.INTER_AREA)
+
     work_hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+    if work_img is not image_rgb:
+        work_hsv = cv2.cvtColor(work_img, cv2.COLOR_RGB2HSV)
     img_area = work_h * work_w
 
     filtered = []

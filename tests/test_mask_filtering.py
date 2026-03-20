@@ -87,6 +87,21 @@ def test_build_tooth_items_rejects_non_uint8_images():
         build_tooth_items(image, raw_masks)
 
 
+def test_build_tooth_items_filters_using_mask_resolution_not_original_image():
+    image = np.full((400, 400, 3), 220, dtype=np.uint8)
+    small_mask = np.zeros((100, 100), dtype=np.uint8)
+    small_mask[45:55, 45:55] = 1
+
+    tooth_items, instances = build_tooth_items(
+        image,
+        [{"segmentation": small_mask, "predicted_iou": 0.9, "stability_score": 0.9}],
+        pad=0,
+    )
+
+    assert tooth_items == []
+    assert instances == []
+
+
 def test_select_instances_prefers_higher_scored_duplicate():
     base = np.zeros((20, 20), dtype=np.uint8)
     duplicate = base.copy()
