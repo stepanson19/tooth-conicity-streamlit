@@ -22,6 +22,7 @@ class _DummyStreamlit:
         self.image_calls = []
         self.dataframe_calls = []
         self.download_calls = []
+        self.success_calls = []
 
     def subheader(self, *args, **kwargs):
         return None
@@ -36,6 +37,7 @@ class _DummyStreamlit:
         return None
 
     def success(self, *args, **kwargs):
+        self.success_calls.append({"args": args, "kwargs": kwargs})
         return None
 
     def warning(self, *args, **kwargs):
@@ -143,6 +145,8 @@ def test_render_result_uses_streamlit_image_compatible_kwargs():
         "error": False,
         "error_stage": None,
         "instances_count": 1,
+        "candidate_count": 3,
+        "selected_tooth_id": 1,
         "overlay_image": image_rgb.copy(),
         "results": [
             {
@@ -163,3 +167,4 @@ def test_render_result_uses_streamlit_image_compatible_kwargs():
     assert len(st.image_calls) == 2
     assert st.image_calls[0]["use_column_width"] is True
     assert st.image_calls[1]["use_column_width"] is True
+    assert st.success_calls[0]["args"][0] == "Prepared tooth selected: id 1 from 3 candidates"

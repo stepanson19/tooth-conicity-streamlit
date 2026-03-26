@@ -135,6 +135,8 @@ def _clear_analysis_result(st):
 def _render_result(st, image_rgb, output):
     serialized = export_payload(output)
     status = serialized.get('status', 'ok')
+    candidate_count = int(serialized.get('candidate_count', serialized.get('instances_count', 0)) or 0)
+    selected_tooth_id = serialized.get('selected_tooth_id')
 
     st.subheader('Result')
     st.caption(status_message(serialized))
@@ -145,7 +147,10 @@ def _render_result(st, image_rgb, output):
     elif status == 'empty':
         st.info('No tooth candidates were found after filtering.')
     else:
-        st.success(f"Analysis complete: {serialized.get('instances_count', 0)} instances")
+        if selected_tooth_id is None:
+            st.success(f'Analysis complete: {serialized.get("instances_count", 0)} selected instance')
+        else:
+            st.success(f'Prepared tooth selected: id {selected_tooth_id} from {candidate_count} candidates')
 
     for warning in warning_lines(serialized.get('warnings', [])):
         st.warning(warning)
@@ -157,7 +162,7 @@ def _render_result(st, image_rgb, output):
         st.image(output['overlay_image'], caption='Overlay', use_column_width=True)
 
     rows = results_to_rows(serialized.get('results', []))
-    st.subheader('Per-tooth measurements')
+    st.subheader('Prepared-tooth measurement')
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)
     else:

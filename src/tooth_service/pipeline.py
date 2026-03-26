@@ -6,6 +6,7 @@ from .constants import DEFAULT_BOT_Q, DEFAULT_SAM_MODEL_TYPE, DEFAULT_TOP_Q
 from .mask_filtering import build_tooth_items
 from .sam_runner import generate_masks, validate_image_rgb
 from .taper import trapezoid_taper_no_rot
+from .target_selection import select_prepared_tooth
 
 
 def _overlay_segmentation_masks(image_rgb: np.ndarray, tooth_items, alpha: float = 0.35) -> np.ndarray:
@@ -50,7 +51,17 @@ def serialize_pipeline_output(output):
     return _json_safe(output)
 
 
-def _pipeline_output(*, status, error_stage, warnings, results, overlay_image, instances_count):
+def _pipeline_output(
+    *,
+    status,
+    error_stage,
+    warnings,
+    results,
+    overlay_image,
+    instances_count,
+    candidate_count=0,
+    selected_tooth_id=None,
+):
     return {
         "status": status,
         "error": status == "error",
@@ -58,6 +69,8 @@ def _pipeline_output(*, status, error_stage, warnings, results, overlay_image, i
         "results": results,
         "overlay_image": overlay_image,
         "instances_count": instances_count,
+        "candidate_count": candidate_count,
+        "selected_tooth_id": selected_tooth_id,
         "warnings": warnings,
     }
 
@@ -96,6 +109,7 @@ def analyze_image(
             results=[],
             overlay_image=image_rgb.copy(),
             instances_count=0,
+            candidate_count=0,
         )
 
     try:
@@ -109,6 +123,7 @@ def analyze_image(
             results=[],
             overlay_image=image_rgb.copy(),
             instances_count=0,
+            candidate_count=0,
         )
 
     if not tooth_items:
@@ -119,7 +134,8 @@ def analyze_image(
             warnings=warnings,
             results=[],
             overlay_image=image_rgb.copy(),
-            instances_count=len(instances),
+            instances_count=0,
+            candidate_count=len(instances),
         )
 
     results = []
@@ -163,11 +179,30 @@ def analyze_image(
             )
         results.append(result)
 
+    selection = select_prepared_tooth(image_rgb, tooth_items, results)
+    if selection is None:
+        warnings.append("No prepared tooth candidate could be selected")
+        return _pipeline_output(
+            status="empty",
+            error_stage=None,
+            warnings=warnings,
+            results=[],
+            overlay_image=image_rgb.copy(),
+            instances_count=0,
+            candidate_count=len(instances),
+        )
+
+    selected_tooth = selection["tooth_item"]
+    selected_result = selection["result"]
+    candidate_count = int(selection["candidate_count"])
+
     return _pipeline_output(
         status="ok",
         error_stage=None,
         warnings=warnings,
-        results=results,
-        overlay_image=_overlay_segmentation_masks(image_rgb, tooth_items),
-        instances_count=len(instances),
+        results=[selected_result],
+        overlay_image=_overlay_segmentation_masks(image_rgb, [selected_tooth]),
+        instances_count=1,
+        candidate_count=candidate_count,
+        selected_tooth_id=int(selected_result["id"]),
     )
