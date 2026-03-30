@@ -29,8 +29,8 @@ def refine_selected_tooth_item(image_rgb, tooth_item, *, pad=10):
     width = max(1, x1 - x0 + 1)
     image_h, image_w = image_rgb.shape[:2]
 
-    pad_x = max(4, int(round(width * 0.18)))
-    extend_y = max(8, int(round(height * 0.35)))
+    pad_x = max(6, int(round(width * 0.30)))
+    extend_y = max(12, int(round(height * 0.50)))
     roi_x0 = max(0, x0 - pad_x)
     roi_x1 = min(image_w - 1, x1 + pad_x)
     roi_y0 = max(0, y0 + int(round(height * 0.35)))
@@ -69,6 +69,13 @@ def refine_selected_tooth_item(image_rgb, tooth_item, *, pad=10):
 
     seed = cv2.dilate(roi_seg.astype(np.uint8), np.ones((5, 5), dtype=np.uint8), iterations=1).astype(bool)
     support = _connected_component_touching_seed(candidate, seed)
+
+    # SAM often leaves a 1-3 px gap between the stump body and the brighter
+    # cervical collar. Bridge only tiny local gaps so the lower apron can join
+    # the tooth, while keeping the same color gate that excludes plain gum.
+    bridge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    bridge_seed = cv2.dilate(roi_seg.astype(np.uint8), bridge_kernel, iterations=1).astype(bool)
+    support |= _connected_component_touching_seed(candidate, bridge_seed)
 
     if not support.any():
         return dict(tooth_item)

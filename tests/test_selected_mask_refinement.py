@@ -47,3 +47,29 @@ def test_refine_selected_tooth_item_does_not_flood_plain_gum():
 
     assert refined["bbox"] == tooth_item["bbox"]
     assert refined["segmentation"].sum() == tooth_item["segmentation"].sum()
+
+
+def test_refine_selected_tooth_item_bridges_small_cervical_gap():
+    image = np.zeros((140, 160, 3), dtype=np.uint8)
+    image[:, :] = np.array([210, 32, 18], dtype=np.uint8)
+
+    seg = np.zeros((140, 160), dtype=np.uint8)
+    seg[20:76, 58:98] = 1
+    image[seg.astype(bool)] = np.array([228, 206, 176], dtype=np.uint8)
+
+    # A small capture gap between the stump mask and the cervical collar should
+    # not prevent the lower apron from joining the selected tooth.
+    image[78:98, 46:110] = np.array([242, 210, 196], dtype=np.uint8)
+
+    tooth_item = {
+        "id": 0,
+        "bbox": (58, 20, 97, 75),
+        "segmentation": seg.astype(bool),
+        "crop": image[20:76, 58:98].copy(),
+        "mask_crop": seg[20:76, 58:98].copy(),
+    }
+
+    refined = refine_selected_tooth_item(image, tooth_item, pad=0)
+
+    assert refined["bbox"] == (46, 20, 109, 97)
+    assert refined["segmentation"].sum() > tooth_item["segmentation"].sum()
