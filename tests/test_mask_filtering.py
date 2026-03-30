@@ -120,6 +120,26 @@ def test_select_instances_prefers_higher_scored_duplicate():
     assert all(item["uid"] != "low" for item in kept)
 
 
+def test_build_tooth_items_keeps_warm_prepared_tooth_with_bright_highlights():
+    image = np.full((120, 120, 3), 170, dtype=np.uint8)
+    mask = make_mask((120, 120), (40, 26, 69, 57))
+
+    image[mask.astype(bool)] = np.array([233, 206, 122], dtype=np.uint8)
+    image[30:36, 45:65] = np.array([246, 242, 232], dtype=np.uint8)
+    image[44:49, 43:67] = np.array([244, 240, 228], dtype=np.uint8)
+
+    tooth_items, instances = build_tooth_items(
+        image,
+        [{"segmentation": mask, "predicted_iou": 0.91, "stability_score": 0.94}],
+        pad=0,
+        max_instances=10,
+    )
+
+    assert len(instances) == 1
+    assert len(tooth_items) == 1
+    assert tooth_items[0]["bbox"] == (40, 26, 69, 57)
+
+
 def make_mask(shape, bbox):
     seg = np.zeros(shape, dtype=np.uint8)
     x0, y0, x1, y1 = bbox

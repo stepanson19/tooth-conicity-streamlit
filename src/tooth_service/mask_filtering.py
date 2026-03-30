@@ -191,7 +191,10 @@ def build_tooth_items(
         color = color_stats_hsv(work_hsv, seg)
         if color["dark_frac"] > 0.25:
             continue
-        if color["orange_frac"] > 0.32:
+        # Warm clinical lighting can shift prepared teeth into the orange HSV band.
+        # Keep such masks when they still contain enough bright low-saturation pixels
+        # typical for enamel/dentin highlights, and reject strongly orange matte regions.
+        if color["orange_frac"] > 0.32 and color["white_frac"] < 0.10:
             continue
         if color["mean_v"] < 55:
             continue
