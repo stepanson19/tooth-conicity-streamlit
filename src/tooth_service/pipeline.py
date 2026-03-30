@@ -5,6 +5,7 @@ import numpy as np
 from .constants import DEFAULT_BOT_Q, DEFAULT_SAM_MODEL_TYPE, DEFAULT_TOP_Q
 from .mask_filtering import build_tooth_items
 from .sam_runner import generate_masks, validate_image_rgb
+from .selected_mask_refinement import refine_selected_tooth_item
 from .taper import trapezoid_taper_no_rot
 from .target_selection import select_prepared_tooth
 
@@ -195,13 +196,42 @@ def analyze_image(
     selected_tooth = selection["tooth_item"]
     selected_result = selection["result"]
     candidate_count = int(selection["candidate_count"])
+    refined_selected_tooth = selected_tooth
+
+    if selected_result.get("conicity_width_deg") is not None:
+        refined_selected_tooth = refine_selected_tooth_item(image_rgb, selected_tooth, pad=pad)
+
+        try:
+            refined_taper_result = trapezoid_taper_no_rot(
+                np.asarray(refined_selected_tooth["mask_crop"]).astype(np.uint8),
+                top_q=top_q,
+                bot_q=bot_q,
+                smooth=smooth,
+            )
+        except Exception as exc:
+            warnings.append(f"refined taper failed for tooth {selected_result['id']}: {exc}")
+            refined_taper_result = None
+
+        if refined_taper_result is not None:
+            selected_result = dict(selected_result)
+            selected_result["bbox_xyxy"] = [int(coord) for coord in refined_selected_tooth["bbox"]]
+            selected_result.update(
+                {
+                    "angle_from_dict": refined_taper_result.get("angle_from_dict"),
+                    "conicity_width_deg": refined_taper_result.get("conicity_width_deg"),
+                    "conicity_lr_deg": refined_taper_result.get("conicity_lr_deg"),
+                    "w_top": refined_taper_result.get("w_top"),
+                    "w_bot": refined_taper_result.get("w_bot"),
+                    "h_eff": refined_taper_result.get("h_eff"),
+                }
+            )
 
     return _pipeline_output(
         status="ok",
         error_stage=None,
         warnings=warnings,
         results=[selected_result],
-        overlay_image=_overlay_segmentation_masks(image_rgb, [selected_tooth]),
+        overlay_image=_overlay_segmentation_masks(image_rgb, [refined_selected_tooth]),
         instances_count=1,
         candidate_count=candidate_count,
         selected_tooth_id=int(selected_result["id"]),
