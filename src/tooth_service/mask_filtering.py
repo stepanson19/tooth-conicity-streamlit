@@ -172,14 +172,24 @@ def build_tooth_items(
         if props is None:
             continue
 
+        color = color_stats_hsv(work_hsv, seg)
+        prepared_like = (
+            color["white_frac"] >= 0.10
+            and color["dark_frac"] <= 0.25
+            and props["solidity"] >= 0.85
+            and props["aspect"] <= 1.8
+        )
+
         area = props["area"]
         if area < max(250, 0.0002 * img_area):
             continue
-        if area > 0.08 * img_area:
+        max_area_ratio = 0.11 if prepared_like else 0.08
+        if area > max_area_ratio * img_area:
             continue
         if props["w"] < 12 or props["h"] < 12:
             continue
-        if props["h"] > 0.35 * work_h:
+        max_height_ratio = 0.45 if prepared_like else 0.35
+        if props["h"] > max_height_ratio * work_h:
             continue
         if props["aspect"] < 0.25 or props["aspect"] > 4.5:
             continue
@@ -188,7 +198,6 @@ def build_tooth_items(
         if props["cy"] < 0.20 * work_h or props["cy"] > 0.82 * work_h:
             continue
 
-        color = color_stats_hsv(work_hsv, seg)
         if color["dark_frac"] > 0.25:
             continue
         # Warm clinical lighting can shift prepared teeth into the orange HSV band.

@@ -140,6 +140,26 @@ def test_build_tooth_items_keeps_warm_prepared_tooth_with_bright_highlights():
     assert tooth_items[0]["bbox"] == (40, 26, 69, 57)
 
 
+def test_build_tooth_items_keeps_tall_prepared_tooth_candidate():
+    image = np.full((720, 720, 3), 170, dtype=np.uint8)
+    mask = make_mask((720, 720), (250, 140, 449, 423))
+
+    image[mask.astype(bool)] = np.array([233, 206, 122], dtype=np.uint8)
+    image[170:225, 290:400] = np.array([246, 242, 232], dtype=np.uint8)
+    image[250:350, 275:415] = np.array([238, 214, 148], dtype=np.uint8)
+
+    tooth_items, instances = build_tooth_items(
+        image,
+        [{"segmentation": mask, "predicted_iou": 0.91, "stability_score": 0.94}],
+        pad=0,
+        max_instances=10,
+    )
+
+    assert len(instances) == 1
+    assert len(tooth_items) == 1
+    assert tooth_items[0]["bbox"] == (250, 140, 449, 423)
+
+
 def make_mask(shape, bbox):
     seg = np.zeros(shape, dtype=np.uint8)
     x0, y0, x1, y1 = bbox
