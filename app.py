@@ -17,6 +17,7 @@ from tooth_service.constants import DEFAULT_BOT_Q, DEFAULT_TOP_Q
 from tooth_service.image_io import decode_uploaded_image
 from tooth_service.pipeline import analyze_image
 from tooth_service.sam_runner import load_sam_model
+from tooth_service.trained_inference import load_trained_prep_model
 from tooth_service.visualization import (
     download_filename,
     download_payload_from_serialized,
@@ -29,6 +30,8 @@ from tooth_service.visualization import (
 APP_DEFAULT_SAM_MODEL_TYPE = resolve_model_type()
 DEFAULT_CHECKPOINT = default_checkpoint_path(ROOT, model_type=APP_DEFAULT_SAM_MODEL_TYPE)
 DEFAULT_CHECKPOINT_INPUT = Path('checkpoints') / DEFAULT_CHECKPOINT.name
+DEFAULT_TRAINED_MODEL = ROOT / 'artifacts' / 'runs' / 'tooth_full_baseline' / 'model.pt'
+DEFAULT_TRAINED_MODEL_INPUT = Path('artifacts') / 'runs' / 'tooth_full_baseline' / 'model.pt'
 
 
 def _get_streamlit():
@@ -50,7 +53,11 @@ def _default_checkpoint_input_value() -> str:
     return str(DEFAULT_CHECKPOINT_INPUT)
 
 
-def _resolve_checkpoint_input(raw_path: str) -> str:
+def _default_trained_model_input_value() -> str:
+    return str(DEFAULT_TRAINED_MODEL_INPUT)
+
+
+def _resolve_project_relative_path(raw_path: str) -> str:
     value = raw_path.strip()
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -58,16 +65,37 @@ def _resolve_checkpoint_input(raw_path: str) -> str:
     return str(path.resolve())
 
 
+def _resolve_checkpoint_input(raw_path: str) -> str:
+    return _resolve_project_relative_path(raw_path)
+
+
 def _analysis_settings(st):
     with st.sidebar:
         st.title('Settings')
+        if 'inference_backend' not in st.session_state:
+            st.session_state.inference_backend = 'trained' if DEFAULT_TRAINED_MODEL.exists() else 'sam'
         if 'checkpoint_path_input' not in st.session_state:
             st.session_state.checkpoint_path_input = _default_checkpoint_input_value()
         elif st.session_state.checkpoint_path_input == str(DEFAULT_CHECKPOINT):
             st.session_state.checkpoint_path_input = _default_checkpoint_input_value()
+        if 'trained_model_path_input' not in st.session_state:
+            st.session_state.trained_model_path_input = _default_trained_model_input_value()
+        elif st.session_state.trained_model_path_input == str(DEFAULT_TRAINED_MODEL):
+            st.session_state.trained_model_path_input = _default_trained_model_input_value()
 
-        checkpoint_path = st.text_input('SAM checkpoint path', key='checkpoint_path_input')
+        inference_backend = st.selectbox(
+            'Inference backend',
+            options=['trained', 'sam'],
+            index=0 if st.session_state.inference_backend == 'trained' else 1,
+            key='inference_backend',
+        )
         device = st.text_input('Device', value='')
+        checkpoint_path = None
+        trained_model_path = None
+        if inference_backend == 'trained':
+            trained_model_path = st.text_input('Trained model path', key='trained_model_path_input')
+        else:
+            checkpoint_path = st.text_input('SAM checkpoint path', key='checkpoint_path_input')
 
         with st.expander('Advanced settings', expanded=False):
             top_q = st.number_input('top_q', min_value=0.0, max_value=1.0, value=float(DEFAULT_TOP_Q), step=0.01)
@@ -85,7 +113,9 @@ def _analysis_settings(st):
     }
 
     return {
-        'checkpoint_path': _resolve_checkpoint_input(checkpoint_path),
+        'inference_backend': inference_backend,
+        'checkpoint_path': _resolve_checkpoint_input(checkpoint_path) if checkpoint_path is not None else None,
+        'trained_model_path': _resolve_project_relative_path(trained_model_path) if trained_model_path is not None else None,
         'model_type': APP_DEFAULT_SAM_MODEL_TYPE,
         'device': _resolve_optional_device(device),
         'top_q': float(top_q),
@@ -108,13 +138,43 @@ def _cached_model_loader(st):
     return _load
 
 
+def _cached_trained_model_loader(st):
+    @st.cache_resource(show_spinner=False)
+    def _load(model_path: str, device: Optional[str]):
+        return load_trained_prep_model(
+            model_path=model_path,
+            device=device,
+        )
+
+    return _load
+
+
 def _run_analysis(image_rgb, settings, st):
+    if settings['inference_backend'] == 'trained':
+        model_path = Path(settings['trained_model_path'])
+        if not model_path.exists():
+            raise FileNotFoundError(f'Trained model not found: {model_path}')
+        cached_load = _cached_trained_model_loader(st)
+        trained_model = cached_load(str(model_path), settings['device'])
+
+        return analyze_image(
+            image_rgb,
+            inference_backend='trained',
+            trained_model=trained_model,
+            device=settings['device'],
+            top_q=settings['top_q'],
+            bot_q=settings['bot_q'],
+            smooth=settings['smooth'],
+            pad=settings['pad'],
+        )
+
     checkpoint = ensure_checkpoint_exists(settings['checkpoint_path'])
     cached_load = _cached_model_loader(st)
     sam_model = cached_load(settings['model_type'], str(checkpoint), settings['device'])
 
     return analyze_image(
         image_rgb,
+        inference_backend='sam',
         checkpoint_path=str(checkpoint),
         model_type=settings['model_type'],
         sam_model=sam_model,

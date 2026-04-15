@@ -121,6 +121,18 @@ def test_default_checkpoint_input_hides_home_directory():
     assert "/Users/" not in value
 
 
+def test_default_trained_model_input_hides_home_directory():
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    app = importlib.import_module("app")
+
+    value = app._default_trained_model_input_value()
+
+    assert value == "artifacts/runs/tooth_full_baseline/model.pt"
+    assert "/Users/" not in value
+
+
 def test_resolve_checkpoint_input_expands_project_relative_path():
     root = Path(__file__).resolve().parents[1]
     if str(root) not in sys.path:
@@ -130,6 +142,17 @@ def test_resolve_checkpoint_input_expands_project_relative_path():
     resolved = app._resolve_checkpoint_input("checkpoints/sam_vit_h_4b8939.pth")
 
     assert resolved == str(app.DEFAULT_CHECKPOINT)
+
+
+def test_resolve_project_relative_path_expands_project_path():
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    app = importlib.import_module("app")
+
+    resolved = app._resolve_project_relative_path("artifacts/runs/tooth_full_baseline/model.pt")
+
+    assert resolved == str(app.DEFAULT_TRAINED_MODEL)
 
 
 def test_render_result_uses_streamlit_image_compatible_kwargs():
@@ -168,3 +191,39 @@ def test_render_result_uses_streamlit_image_compatible_kwargs():
     assert st.image_calls[0]["use_column_width"] is True
     assert st.image_calls[1]["use_column_width"] is True
     assert st.success_calls[0]["args"][0] == "Prepared tooth selected: id 1 from 3 candidates"
+
+
+def test_run_analysis_uses_trained_backend_without_sam(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    app = importlib.import_module("app")
+
+    image_rgb = np.zeros((4, 4, 3), dtype=np.uint8)
+    calls = {}
+
+    monkeypatch.setattr(app, "_cached_trained_model_loader", lambda st: (lambda path, device: object()))
+
+    def _fake_analyze(image_rgb, **kwargs):
+        calls["kwargs"] = kwargs
+        return {"status": "ok"}
+
+    monkeypatch.setattr(app, "analyze_image", _fake_analyze)
+
+    output = app._run_analysis(
+        image_rgb,
+        {
+            "inference_backend": "trained",
+            "trained_model_path": str(app.DEFAULT_TRAINED_MODEL),
+            "device": "cpu",
+            "top_q": 0.15,
+            "bot_q": 0.65,
+            "smooth": 7,
+            "pad": 10,
+        },
+        st=object(),
+    )
+
+    assert output["status"] == "ok"
+    assert calls["kwargs"]["inference_backend"] == "trained"
+    assert calls["kwargs"]["trained_model"] is not None

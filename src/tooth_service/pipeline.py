@@ -3,11 +3,12 @@ from __future__ import annotations
 import numpy as np
 
 from .constants import DEFAULT_BOT_Q, DEFAULT_SAM_MODEL_TYPE, DEFAULT_TOP_Q
-from .mask_filtering import build_tooth_items
+from .mask_filtering import build_tooth_items, crop_from_mask
 from .sam_runner import generate_masks, validate_image_rgb
 from .selected_mask_refinement import refine_selected_tooth_item
 from .taper import trapezoid_taper_no_rot
 from .target_selection import select_prepared_tooth
+from .trained_inference import predict_prepared_tooth_mask
 
 
 def _overlay_segmentation_masks(image_rgb: np.ndarray, tooth_items, alpha: float = 0.35) -> np.ndarray:
@@ -79,9 +80,11 @@ def _pipeline_output(
 def analyze_image(
     image_rgb,
     *,
+    inference_backend="sam",
     checkpoint_path=None,
     model_type=DEFAULT_SAM_MODEL_TYPE,
     sam_model=None,
+    trained_model=None,
     device=None,
     mask_generator_kwargs=None,
     top_q=DEFAULT_TOP_Q,
@@ -91,6 +94,104 @@ def analyze_image(
 ):
     warnings = []
     image_rgb = validate_image_rgb(image_rgb)
+
+    if inference_backend == "trained":
+        try:
+            seg = predict_prepared_tooth_mask(
+                image_rgb,
+                model=trained_model,
+                device=device,
+            )
+        except Exception as exc:
+            warnings.append(f"trained mask generation failed: {exc}")
+            return _pipeline_output(
+                status="error",
+                error_stage="trained_mask_generation",
+                warnings=warnings,
+                results=[],
+                overlay_image=image_rgb.copy(),
+                instances_count=0,
+                candidate_count=0,
+            )
+
+        if not np.asarray(seg).astype(bool).any():
+            warnings.append("Trained segmentation produced no prepared-tooth mask")
+            return _pipeline_output(
+                status="empty",
+                error_stage=None,
+                warnings=warnings,
+                results=[],
+                overlay_image=image_rgb.copy(),
+                instances_count=0,
+                candidate_count=0,
+            )
+
+        out = crop_from_mask(image_rgb, np.asarray(seg).astype(np.uint8), pad=pad)
+        if out is None:
+            warnings.append("Trained segmentation produced an invalid mask crop")
+            return _pipeline_output(
+                status="empty",
+                error_stage=None,
+                warnings=warnings,
+                results=[],
+                overlay_image=image_rgb.copy(),
+                instances_count=0,
+                candidate_count=0,
+            )
+
+        crop, mask_crop, bbox = out
+        selected_tooth = {
+            "id": 0,
+            "crop": crop,
+            "mask_crop": mask_crop,
+            "bbox": bbox,
+            "segmentation": np.asarray(seg).astype(bool),
+        }
+        refined_selected_tooth = refine_selected_tooth_item(image_rgb, selected_tooth, pad=pad)
+
+        result = {
+            "id": 0,
+            "bbox_xyxy": [int(coord) for coord in refined_selected_tooth["bbox"]],
+            "angle_from_dict": None,
+            "conicity_width_deg": None,
+            "conicity_lr_deg": None,
+            "w_top": None,
+            "w_bot": None,
+            "h_eff": None,
+        }
+        try:
+            taper_result = trapezoid_taper_no_rot(
+                np.asarray(refined_selected_tooth["mask_crop"]).astype(np.uint8),
+                top_q=top_q,
+                bot_q=bot_q,
+                smooth=smooth,
+            )
+        except Exception as exc:
+            warnings.append(f"taper failed for tooth 0: {exc}")
+            taper_result = None
+
+        if taper_result is not None:
+            result.update(
+                {
+                    "angle_from_dict": taper_result.get("angle_from_dict"),
+                    "conicity_width_deg": taper_result.get("conicity_width_deg"),
+                    "conicity_lr_deg": taper_result.get("conicity_lr_deg"),
+                    "w_top": taper_result.get("w_top"),
+                    "w_bot": taper_result.get("w_bot"),
+                    "h_eff": taper_result.get("h_eff"),
+                }
+            )
+
+        return _pipeline_output(
+            status="ok",
+            error_stage=None,
+            warnings=warnings,
+            results=[result],
+            overlay_image=_overlay_segmentation_masks(image_rgb, [refined_selected_tooth]),
+            instances_count=1,
+            candidate_count=1,
+            selected_tooth_id=0,
+        )
 
     try:
         raw_masks = generate_masks(

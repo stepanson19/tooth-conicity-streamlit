@@ -195,3 +195,60 @@ def test_serialize_pipeline_output_normalizes_numpy_payload():
     assert serialized["overlay_image"] == [[[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]]]
     assert serialized["results"][0]["id"] == 3
     assert serialized["results"][0]["bbox_xyxy"] == [1, 2, 3, 4]
+
+
+def test_analyze_image_supports_trained_backend_without_sam(monkeypatch):
+    image = np.zeros((20, 20, 3), dtype=np.uint8)
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    mask[4:16, 6:14] = 1
+
+    def _fail_generate(*args, **kwargs):
+        raise AssertionError("SAM path should not run for trained backend")
+
+    monkeypatch.setattr(pipeline, "generate_masks", _fail_generate)
+    monkeypatch.setattr(pipeline, "predict_prepared_tooth_mask", lambda *args, **kwargs: mask.astype(bool))
+    monkeypatch.setattr(pipeline, "refine_selected_tooth_item", lambda image_rgb, tooth_item, pad=10: tooth_item)
+    monkeypatch.setattr(
+        pipeline,
+        "trapezoid_taper_no_rot",
+        lambda *args, **kwargs: {
+            "angle_from_dict": 14,
+            "conicity_width_deg": 14.0,
+            "conicity_lr_deg": 16.0,
+            "w_top": 2.0,
+            "w_bot": 3.0,
+            "h_eff": 4.0,
+        },
+    )
+
+    result = pipeline.analyze_image(
+        image,
+        inference_backend="trained",
+        trained_model=object(),
+        pad=0,
+    )
+
+    assert result["status"] == "ok"
+    assert result["error"] is False
+    assert result["instances_count"] == 1
+    assert result["candidate_count"] == 1
+    assert result["selected_tooth_id"] == 0
+    assert result["results"][0]["bbox_xyxy"] == [6, 4, 13, 15]
+    assert result["results"][0]["conicity_width_deg"] == 14.0
+
+
+def test_analyze_image_marks_empty_when_trained_backend_returns_no_mask(monkeypatch):
+    image = np.zeros((20, 20, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(pipeline, "predict_prepared_tooth_mask", lambda *args, **kwargs: np.zeros((20, 20), dtype=bool))
+
+    result = pipeline.analyze_image(
+        image,
+        inference_backend="trained",
+        trained_model=object(),
+    )
+
+    assert result["status"] == "empty"
+    assert result["error"] is False
+    assert result["instances_count"] == 0
+    assert result["warnings"] == ["Trained segmentation produced no prepared-tooth mask"]
