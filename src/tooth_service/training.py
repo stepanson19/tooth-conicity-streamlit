@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
+
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -100,8 +102,16 @@ def segmentation_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tens
 
 
 @dataclass(frozen=True)
+class SegmentationScores:
+    accuracy: float
+    dice: float
+    iou: float
+
+
+@dataclass(frozen=True)
 class EpochMetrics:
     loss: float
+    accuracy: float
     dice: float
     iou: float
 
@@ -114,15 +124,90 @@ class TrainingResult:
     best_epoch: int
 
 
+def _compute_binary_segmentation_scores(
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+) -> SegmentationScores:
+    pred_mask = preds.bool()
+    target_mask = targets >= 0.5
+    true_positive = (pred_mask & target_mask).sum(dim=(1, 2, 3)).float()
+    true_negative = (~pred_mask & ~target_mask).sum(dim=(1, 2, 3)).float()
+    false_positive = (pred_mask & ~target_mask).sum(dim=(1, 2, 3)).float()
+    false_negative = (~pred_mask & target_mask).sum(dim=(1, 2, 3)).float()
+
+    total = true_positive + true_negative + false_positive + false_negative
+    accuracy = torch.where(total > 0, (true_positive + true_negative) / total, torch.ones_like(total))
+
+    iou_denominator = true_positive + false_positive + false_negative
+    iou = torch.where(iou_denominator > 0, true_positive / iou_denominator, torch.ones_like(iou_denominator))
+
+    dice_denominator = 2.0 * true_positive + false_positive + false_negative
+    dice = torch.where(dice_denominator > 0, 2.0 * true_positive / dice_denominator, torch.ones_like(dice_denominator))
+
+    return SegmentationScores(
+        accuracy=float(accuracy.mean().item()),
+        dice=float(dice.mean().item()),
+        iou=float(iou.mean().item()),
+    )
+
+
+def compute_segmentation_scores(logits: torch.Tensor, targets: torch.Tensor) -> SegmentationScores:
+    preds = torch.sigmoid(logits) >= 0.5
+    return _compute_binary_segmentation_scores(preds, targets)
+
+
+def _as_score_dict(scores: SegmentationScores) -> dict[str, float]:
+    return {
+        "accuracy": scores.accuracy,
+        "dice": scores.dice,
+        "iou": scores.iou,
+    }
+
+
+def evaluate_binary_segmentation_batches(
+    batches: Iterable[tuple[torch.Tensor, torch.Tensor, Sequence[str]]],
+) -> dict[str, object]:
+    rows: list[dict[str, float | str]] = []
+    totals = SegmentationScores(accuracy=0.0, dice=0.0, iou=0.0)
+    count = 0
+    for preds, targets, names in batches:
+        if preds.shape[0] != targets.shape[0] or preds.shape[0] != len(names):
+            raise ValueError("Predictions, targets, and names must have the same batch size")
+        for index, name in enumerate(names):
+            scores = _compute_binary_segmentation_scores(preds[index : index + 1], targets[index : index + 1])
+            rows.append({"image": str(name), **_as_score_dict(scores)})
+            totals = SegmentationScores(
+                accuracy=totals.accuracy + scores.accuracy,
+                dice=totals.dice + scores.dice,
+                iou=totals.iou + scores.iou,
+            )
+            count += 1
+
+    if count == 0:
+        average = SegmentationScores(accuracy=0.0, dice=0.0, iou=0.0)
+    else:
+        average = SegmentationScores(
+            accuracy=totals.accuracy / count,
+            dice=totals.dice / count,
+            iou=totals.iou / count,
+        )
+    return {"average": _as_score_dict(average), "images": rows}
+
+
+def evaluate_segmentation_batches(
+    batches: Iterable[tuple[torch.Tensor, torch.Tensor, Sequence[str]]],
+) -> dict[str, object]:
+    binary_batches = (
+        (torch.sigmoid(logits) >= 0.5, targets, names)
+        for logits, targets, names in batches
+    )
+    return evaluate_binary_segmentation_batches(binary_batches)
+
+
 def compute_batch_scores(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) -> tuple[float, float]:
-    preds = (torch.sigmoid(logits) >= 0.5).float()
-    intersection = (preds * targets).sum(dim=(1, 2, 3))
-    union = ((preds + targets) > 0).float().sum(dim=(1, 2, 3))
-    pred_sum = preds.sum(dim=(1, 2, 3))
-    target_sum = targets.sum(dim=(1, 2, 3))
-    dice = ((2.0 * intersection + eps) / (pred_sum + target_sum + eps)).mean().item()
-    iou = ((intersection + eps) / (union + eps)).mean().item()
-    return dice, iou
+    del eps
+    scores = compute_segmentation_scores(logits, targets)
+    return scores.dice, scores.iou
 
 
 def keep_largest_connected_component(binary_masks: torch.Tensor) -> torch.Tensor:
@@ -154,9 +239,10 @@ def evaluate_model(
 ) -> EpochMetrics:
     model.eval()
     total_loss = 0.0
+    total_accuracy = 0.0
     total_dice = 0.0
     total_iou = 0.0
-    total_batches = 0
+    total_images = 0
     with torch.no_grad():
         for images, masks, _ in loader:
             images = images.to(device)
@@ -165,25 +251,45 @@ def evaluate_model(
             loss = segmentation_loss(logits, masks)
             if largest_component_only:
                 preds = keep_largest_connected_component((torch.sigmoid(logits) >= 0.5).float()).to(masks.device)
-                intersection = (preds * masks).sum(dim=(1, 2, 3))
-                union = ((preds + masks) > 0).float().sum(dim=(1, 2, 3))
-                pred_sum = preds.sum(dim=(1, 2, 3))
-                target_sum = masks.sum(dim=(1, 2, 3))
-                dice = ((2.0 * intersection + 1e-6) / (pred_sum + target_sum + 1e-6)).mean().item()
-                iou = ((intersection + 1e-6) / (union + 1e-6)).mean().item()
+                scores = _compute_binary_segmentation_scores(preds, masks)
             else:
-                dice, iou = compute_batch_scores(logits, masks)
-            total_loss += float(loss.item())
-            total_dice += dice
-            total_iou += iou
-            total_batches += 1
-    if total_batches == 0:
-        return EpochMetrics(loss=0.0, dice=0.0, iou=0.0)
+                scores = compute_segmentation_scores(logits, masks)
+            batch_size = int(masks.shape[0])
+            total_loss += float(loss.item()) * batch_size
+            total_accuracy += scores.accuracy * batch_size
+            total_dice += scores.dice * batch_size
+            total_iou += scores.iou * batch_size
+            total_images += batch_size
+    if total_images == 0:
+        return EpochMetrics(loss=0.0, accuracy=0.0, dice=0.0, iou=0.0)
     return EpochMetrics(
-        loss=total_loss / total_batches,
-        dice=total_dice / total_batches,
-        iou=total_iou / total_batches,
+        loss=total_loss / total_images,
+        accuracy=total_accuracy / total_images,
+        dice=total_dice / total_images,
+        iou=total_iou / total_images,
     )
+
+
+def evaluate_model_by_image(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    largest_component_only: bool = False,
+) -> dict[str, object]:
+    model.eval()
+    batches = []
+    with torch.no_grad():
+        for images, masks, names in loader:
+            images = images.to(device)
+            masks = masks.to(device)
+            logits = model(images)
+            if largest_component_only:
+                preds = keep_largest_connected_component((torch.sigmoid(logits) >= 0.5).float()).to(masks.device)
+                batches.append((preds, masks, names))
+            else:
+                batches.append((torch.sigmoid(logits) >= 0.5, masks, names))
+    return evaluate_binary_segmentation_batches(batches)
 
 
 def train_segmentation_model(
@@ -206,9 +312,10 @@ def train_segmentation_model(
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
+        train_accuracy = 0.0
         train_dice = 0.0
         train_iou = 0.0
-        batch_count = 0
+        image_count = 0
         for images, masks, _ in train_loader:
             images = images.to(device)
             masks = masks.to(device)
@@ -217,16 +324,19 @@ def train_segmentation_model(
             loss = segmentation_loss(logits, masks)
             loss.backward()
             optimizer.step()
-            dice, iou = compute_batch_scores(logits.detach(), masks)
-            train_loss += float(loss.item())
-            train_dice += dice
-            train_iou += iou
-            batch_count += 1
+            scores = compute_segmentation_scores(logits.detach(), masks)
+            batch_size = int(masks.shape[0])
+            train_loss += float(loss.item()) * batch_size
+            train_accuracy += scores.accuracy * batch_size
+            train_dice += scores.dice * batch_size
+            train_iou += scores.iou * batch_size
+            image_count += batch_size
 
         train_metrics = EpochMetrics(
-            loss=train_loss / max(1, batch_count),
-            dice=train_dice / max(1, batch_count),
-            iou=train_iou / max(1, batch_count),
+            loss=train_loss / max(1, image_count),
+            accuracy=train_accuracy / max(1, image_count),
+            dice=train_dice / max(1, image_count),
+            iou=train_iou / max(1, image_count),
         )
         val_metrics = evaluate_model(model, val_loader, device)
         train_history.append(train_metrics)

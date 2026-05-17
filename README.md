@@ -50,3 +50,19 @@ Run a minimal headless startup check:
 source .venv/bin/activate
 streamlit run app.py --server.headless true --server.port 8501
 ```
+
+## Segmentation Metrics
+
+The trained prepared-tooth model can be evaluated against CVAT masks with pixel accuracy, Dice, and IoU. IoU is the same Intersection over Union criterion used in the reference paper: predicted mask intersection divided by predicted/ground-truth union.
+
+Evaluate the saved full-dataset baseline without retraining:
+```bash
+PYTHONPATH=src python scripts/evaluate_prep_segmentation.py \
+  --model-path artifacts/runs/tooth_full_baseline/model.pt \
+  --prepared-dir artifacts/prepared_dataset_tooth_full \
+  --split test \
+  --largest-component-only \
+  --output artifacts/runs/tooth_full_baseline/test_metrics_largest_component_by_image.json
+```
+
+New training runs also save `accuracy`, `dice`, and `iou` in `test_metrics.json`, plus per-image rows in `test_metrics_by_image.json`.

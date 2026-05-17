@@ -13,6 +13,7 @@ from tooth_service.cvat_dataset import export_cvat_zip_to_segmentation_dataset
 from tooth_service.training import (
     PrepSegmentationDataset,
     evaluate_model,
+    evaluate_model_by_image,
     save_training_result,
     train_segmentation_model,
 )
@@ -73,12 +74,16 @@ def main() -> None:
     )
     test_metrics = evaluate_model(model, test_loader, device)
     test_metrics_largest = evaluate_model(model, test_loader, device, largest_component_only=True)
+    test_metrics_by_image = evaluate_model_by_image(model, test_loader, device)
+    test_metrics_largest_by_image = evaluate_model_by_image(model, test_loader, device, largest_component_only=True)
 
     torch.save(model.state_dict(), run_dir / "model.pt")
     save_training_result(training_result, run_dir / "training_metrics.json")
     (run_dir / "dataset_summary.json").write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
     (run_dir / "test_metrics.json").write_text(json.dumps(asdict(test_metrics), indent=2), encoding="utf-8")
     (run_dir / "test_metrics_largest_component.json").write_text(json.dumps(asdict(test_metrics_largest), indent=2), encoding="utf-8")
+    (run_dir / "test_metrics_by_image.json").write_text(json.dumps(test_metrics_by_image, indent=2), encoding="utf-8")
+    (run_dir / "test_metrics_largest_component_by_image.json").write_text(json.dumps(test_metrics_largest_by_image, indent=2), encoding="utf-8")
 
     print(json.dumps(
         {
@@ -91,6 +96,8 @@ def main() -> None:
             "best_val_iou": training_result.best_val_iou,
             "test_metrics": asdict(test_metrics),
             "test_metrics_largest_component": asdict(test_metrics_largest),
+            "test_metrics_by_image": test_metrics_by_image["average"],
+            "test_metrics_largest_component_by_image": test_metrics_largest_by_image["average"],
         },
         indent=2,
     ))
